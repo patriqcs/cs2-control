@@ -47,13 +47,92 @@ Werte die du setzen musst:
 | `HOST_CS2_DATA_PATH` | Host-Pfad zum CS2-Daten-Ordner | `/mnt/cache/cs2moddedserver` |
 | `PANEL_PORT` | Port auf dem das Panel läuft | `3006` |
 
-### 3. Bauen & Starten
+### 3. Starten
+
+**Option A — Pre-built Image von GitHub Container Registry (empfohlen):**
+
+```bash
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Vorteil: kein lokaler Build, schnell, immer aktuell. Voraussetzung: `GHCR_OWNER` in `.env` gesetzt (siehe ["Deployment via GitHub Container Registry"](#deployment-via-github-container-registry)).
+
+**Option B — Lokal bauen:**
 
 ```bash
 docker compose up -d --build
 ```
 
 Panel ist erreichbar unter `http://YOUR_HOST:3006`
+
+## Deployment via GitHub Container Registry
+
+Statt das Image auf jedem Server lokal zu bauen, kann GitHub Actions das Image bei jedem Push automatisch bauen und nach **ghcr.io** pushen. Auf dem Server reicht dann ein `docker compose pull && up -d`.
+
+### Einmalig: Repo auf GitHub anlegen
+
+```bash
+gh repo create cs2-control-panel --public --source=. --push
+```
+
+Sobald gepusht: Der Workflow `.github/workflows/docker-image.yml` läuft automatisch los und published das Image nach `ghcr.io/<USERNAME>/cs2-control-panel:latest`.
+
+Status der Builds:
+
+```bash
+gh run list --workflow=docker-image.yml
+gh run watch
+```
+
+### Package public machen (falls gewünscht)
+
+Standardmäßig ist das ghcr-Package privat. Für public Pull ohne Login:
+
+1. GitHub → dein Profil → **Packages** → `cs2-control-panel`
+2. Package settings → **Change visibility** → **Public**
+
+### Auf dem Server deployen
+
+```bash
+# .env mit GHCR_OWNER=dein-github-username befüllen
+cp .env.example .env
+nano .env
+
+# Image pullen + starten
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+**Privates Package?** Vorher einloggen:
+
+```bash
+echo $GITHUB_PAT | docker login ghcr.io -u <USERNAME> --password-stdin
+```
+
+(PAT mit Scope `read:packages` reicht — auf github.com/settings/tokens generieren)
+
+### Verfügbare Tags
+
+Der Workflow erzeugt automatisch folgende Tags:
+
+| Tag | Wann |
+|-----|------|
+| `latest` | Bei jedem Push auf `main`/`master` |
+| `master` / `main` | Branch-Name |
+| `v1.3.0` | Bei git-Tag `v1.3.0` |
+| `1.3` | Major.Minor bei git-Tag |
+| `sha-abc1234` | Commit-Hash bei jedem Push |
+
+Per `IMAGE_TAG=v1.3.0` in `.env` lässt sich ein spezifischer Tag pinnen.
+
+### Update auf neue Version
+
+```bash
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+(oder im Panel-Container `pull_policy: always` lässt Docker beim `up` immer pullen)
 
 ## Security
 
@@ -116,9 +195,16 @@ In `server.js` der `MACROS` Map einen Eintrag hinzufügen, dann in `public/index
 
 ## Container neu bauen nach Code-Änderungen
 
+**Lokal:**
 ```bash
 docker compose down
 docker compose up -d --build
+```
+
+**Via ghcr.io** (nach Push auf GitHub):
+```bash
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
 ```
 
 ## Architektur

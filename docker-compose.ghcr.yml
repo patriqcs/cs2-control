@@ -1,0 +1,19 @@
+services:
+  cs2-control:
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER in .env to your GitHub username/org (lowercase)}/cs2-control-panel:${IMAGE_TAG:-latest}
+    container_name: cs2-control
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "${PANEL_PORT:-3006}:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOST_CS2_DATA_PATH}:${CS2_DATA_PATH:-/cs2-data}
+    environment:
+      - AUTH_USER=${AUTH_USER}
+      - AUTH_PASS=${AUTH_PASS}
+      - CS2_CONTAINER=${CS2_CONTAINER}
+      - RCON_HOST=${RCON_HOST}
+      - RCON_PORT=${RCON_PORT:-27015}
+      - RCON_PASSWORD=${RCON_PASSWORD}
+      - CS2_DATA_PATH=${CS2_DATA_PATH:-/cs2-data}
