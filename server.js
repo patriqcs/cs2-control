@@ -16,6 +16,7 @@ const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
 const PORT = process.env.PORT || 3000;
 const CS2_DATA_PATH = process.env.CS2_DATA_PATH || '/cs2-data';
 
+app.use('/icons', express.static(path.join(__dirname, 'public', 'icons')));
 app.use(basicAuth({
     users: { [process.env.AUTH_USER || 'admin']: process.env.AUTH_PASS || 'changeme' },
     challenge: true,
