@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CS2 Server Control</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a0a0a; color: #e5e5e5; min-height: 100vh;
+      display: flex; align-items: flex-start; justify-content: center; padding: 1rem;
+    }
+    .card {
+      background: #161616; border: 1px solid #262626;
+      border-radius: 12px; padding: 1.5rem; max-width: 540px; width: 100%;
+      margin-top: 1rem;
+    }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    .title h1 { font-size: 18px; font-weight: 500; margin-bottom: 2px; }
+    .title p { font-size: 12px; color: #888; }
+    .status-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 500; transition: all 0.3s;
+    }
+    .status-badge.running { background: #0a2a0f; color: #4ade80; }
+    .status-badge.stopped { background: #2a0a0a; color: #f87171; }
+    .status-badge.loading { background: #2a200a; color: #fbbf24; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .running .status-dot { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .section-label {
+      font-size: 10px; color: #666; text-transform: uppercase;
+      letter-spacing: 0.8px; margin: 14px 0 6px; font-weight: 500;
+    }
+    .section-label:first-of-type { margin-top: 4px; }
+    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .actions.two { grid-template-columns: repeat(2, 1fr); }
+    .maps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    button {
+      padding: 10px; font-size: 12px; font-weight: 500;
+      background: transparent; border: 1px solid #333;
+      border-radius: 8px; cursor: pointer; transition: all 0.15s;
+      font-family: inherit; color: #e5e5e5;
+    }
+    button:hover:not(:disabled) { background: #1f1f1f; border-color: #444; }
+    button:active:not(:disabled) { transform: scale(0.98); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.start { color: #4ade80; border-color: #1e3a23; }
+    button.restart { color: #fbbf24; border-color: #3a2f14; }
+    button.stop { color: #f87171; border-color: #3a1414; }
+    button.map { color: #7B9FD6; }
+    button.cursed-on { color: #c084fc; border-color: #4c1d95; }
+    button.cursed-off { color: #a78bfa; border-color: #2e1065; }
+
+    .danger-zone {
+      margin-top: 1rem; border: 1px solid #3a1414; background: #1a0a0a;
+      border-radius: 8px; padding: 12px;
+    }
+    .danger-zone summary {
+      cursor: pointer; color: #f87171; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; list-style: none;
+    }
+    .danger-zone summary::-webkit-details-marker { display: none; }
+    .danger-zone summary::before { content: '⚠ '; }
+    .danger-zone[open] summary::before { content: '⚠ '; }
+    .danger-zone p { font-size: 11px; color: #999; margin: 8px 0; line-height: 1.5; }
+    .danger-zone strong { color: #f87171; }
+    .danger-zone button.danger {
+      width: 100%; color: #f87171; border-color: #5a2020; margin-top: 6px;
+    }
+    .danger-zone button.danger:hover:not(:disabled) {
+      background: #2a0a0a; border-color: #7a2020;
+    }
+
+    .stats-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+      font-size: 11px; color: #888; margin-top: 8px;
+    }
+    .stats-row .stat { background: #0f0f0f; padding: 6px 8px; border-radius: 6px; }
+    .stats-row .stat strong { display: block; color: #ccc; font-size: 12px; font-weight: 500; margin-top: 1px; }
+
+    .terminal {
+      background: #0A0A0A; border: 1px solid #262626; border-radius: 8px;
+      padding: 8px; height: 180px; overflow-y: auto;
+      font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .terminal .entry { margin-bottom: 6px; }
+    .terminal .prompt { color: #888; }
+    .terminal .cmd { color: #7B9FD6; }
+    .terminal .resp { color: #aaa; white-space: pre-wrap; margin-top: 2px; padding-left: 10px; border-left: 2px solid #333; }
+    .terminal .err { color: #f87171; padding-left: 10px; border-left: 2px solid #3a1414; margin-top: 2px; }
+    .terminal .placeholder { color: #555; font-style: italic; }
+    .input-row { display: flex; gap: 6px; }
+    .input-row input {
+      flex: 1; padding: 9px 10px; font-size: 12px;
+      background: #0f0f0f; border: 1px solid #333; border-radius: 8px;
+      color: #e5e5e5; font-family: ui-monospace, Menlo, monospace;
+    }
+    .input-row input:focus { outline: none; border-color: #555; }
+    .input-row button { padding: 9px 14px; }
+
+    .logs-section { margin-top: 1rem; border-top: 1px solid #262626; padding-top: 1rem; }
+    .logs-toggle { background: none; border: none; color: #888; font-size: 12px; cursor: pointer; padding: 0; width: 100%; text-align: left; }
+    .logs-toggle:hover { color: #ccc; }
+    .logs-content {
+      display: none; margin-top: 10px;
+      background: #0A0A0A; border: 1px solid #262626; border-radius: 8px; padding: 10px;
+      font-family: ui-monospace, Menlo, monospace; font-size: 10px;
+      max-height: 250px; overflow-y: auto; white-space: pre-wrap; color: #888;
+    }
+    .logs-content.open { display: block; }
+
+    .toast {
+      position: fixed; top: 20px; right: 20px;
+      background: #1f1f1f; border: 1px solid #333; padding: 10px 14px;
+      border-radius: 8px; font-size: 12px;
+      opacity: 0; transform: translateY(-8px); transition: all 0.3s;
+      pointer-events: none; max-width: 300px;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { border-color: #1e3a23; color: #4ade80; }
+    .toast.error { border-color: #3a1414; color: #f87171; }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+      display: none; align-items: center; justify-content: center;
+      z-index: 100; padding: 1rem;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      background: #161616; border: 1px solid #5a2020;
+      border-radius: 12px; padding: 1.5rem; max-width: 420px; width: 100%;
+    }
+    .modal h2 { color: #f87171; font-size: 16px; margin-bottom: 12px; }
+    .modal p { font-size: 13px; color: #ccc; line-height: 1.6; margin-bottom: 12px; }
+    .modal ul { margin: 0 0 12px 20px; font-size: 12px; color: #aaa; line-height: 1.7; }
+    .modal label {
+      display: block; font-size: 11px; color: #888; margin-bottom: 6px;
+      font-family: ui-monospace, Menlo, monospace;
+    }
+    .modal input {
+      width: 100%; padding: 10px 12px;
+      background: #0f0f0f; border: 1px solid #333; border-radius: 6px;
+      color: #e5e5e5; font-family: ui-monospace, Menlo, monospace; font-size: 13px; margin-bottom: 14px;
+    }
+    .modal input:focus { outline: none; border-color: #5a2020; }
+    .modal-buttons { display: flex; gap: 8px; }
+    .modal-buttons button { flex: 1; padding: 11px; }
+    .modal-buttons .cancel { color: #aaa; border-color: #333; }
+    .modal-buttons .confirm { color: #f87171; border-color: #5a2020; }
+    .modal-buttons .confirm:disabled { opacity: 0.3; }
+
+    .footer { margin-top: 1rem; font-size: 10px; color: #555; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title">
+        <h1>CS2 Server</h1>
+        <p>cs2-modded-server</p>
+      </div>
+      <div id="status-badge" class="status-badge loading">
+        <span class="status-dot"></span>
+        <span id="status-text">Lade...</span>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat">Uptime<strong id="uptime">—</strong></div>
+      <div class="stat">Spieler<strong id="players">—</strong></div>
+      <div class="stat">Map<strong id="currentmap">—</strong></div>
+    </div>
+
+    <div class="section-label">Server</div>
+    <div class="actions">
+      <button class="start" id="btn-start" onclick="action('start')">▶ Start</button>
+      <button class="restart" id="btn-restart" onclick="action('restart')">↻ Restart</button>
+      <button class="stop" id="btn-stop" onclick="action('stop')">■ Stop</button>
+    </div>
+
+    <div class="section-label">Prop Hunt Maps</div>
+    <div class="maps">
+      <button class="map" onclick="loadMap('3608612434', 'Inferno')">🏛 Inferno</button>
+      <button class="map" onclick="loadMap('3644811896', 'Office')">💼 Office</button>
+      <button class="map" onclick="loadMap('3711322683', 'Nuke')">☢ Nuke</button>
+      <button class="map" onclick="loadMap('3615968422', 'Mirage')">🏜 Mirage</button>
+    </div>
+
+    <div class="section-label">Cursed Config</div>
+    <div class="actions two">
+      <button class="cursed-on macro" onclick="macro('cursed_on', 'Cursed Config AN')">😈 An</button>
+      <button class="cursed-off macro" onclick="macro('cursed_off', 'Cursed Config AUS — Reset')">🧹 Aus + Reset</button>
+    </div>
+
+    <div class="section-label">RCON Terminal</div>
+    <div class="terminal" id="terminal">
+      <div class="entry placeholder">Keine Commands gesendet. Beispiele: status, bot_kick, mp_freezetime 30, changelevel de_dust2</div>
+    </div>
+    <div class="input-row">
+      <input type="text" id="rcon-input" placeholder="RCON-Befehl eingeben..." autocomplete="off" onkeydown="handleKey(event)">
+      <button onclick="sendRcon()">Send</button>
+    </div>
+
+    <details class="danger-zone">
+      <summary>Danger Zone</summary>
+      <p>
+        <strong>Force Update</strong> stoppt den Server, löscht den kompletten CS2-Daten-Ordner (<strong>~40 GB</strong>) und startet neu.
+        SteamCMD lädt CS2 dann komplett frisch herunter.
+      </p>
+      <p style="color: #f87171;">
+        Dauert <strong>30-40 Minuten</strong>. Alle Spieler werden disconnected. Nicht rückgängig.
+      </p>
+      <button class="danger" id="btn-force-update" onclick="openForceUpdateModal()">⚠ Force Update auslösen</button>
+    </details>
+
+    <div class="logs-section">
+      <button class="logs-toggle" onclick="toggleLogs()">
+        <span id="logs-toggle-text">▸ Container-Logs anzeigen</span>
+      </button>
+      <div class="logs-content" id="logs-content">Lädt...</div>
+    </div>
+
+    <div class="footer">patriQ's CS2 Control Panel</div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="modal-backdrop" id="modal-force-update">
+    <div class="modal">
+      <h2>⚠ Force Update bestätigen</h2>
+      <p>Folgende Aktionen werden ausgeführt:</p>
+      <ul>
+        <li>Container <code>cs2-modded-server</code> wird gestoppt</li>
+        <li>Inhalt des CS2-Daten-Ordners wird komplett gelöscht (~40 GB)</li>
+        <li>Container wird neu gestartet, lädt CS2 frisch von Steam (~30-40 Min)</li>
+        <li>Alle Spieler werden vom Server geworfen</li>
+      </ul>
+      <p>Tippe zur Bestätigung den folgenden Text ein:</p>
+      <label>FORCE-UPDATE-JETZT</label>
+      <input type="text" id="force-confirm-input" autocomplete="off" oninput="updateForceConfirm()" placeholder="Hier exakt eintippen...">
+      <div class="modal-buttons">
+        <button class="cancel" onclick="closeForceUpdateModal()">Abbrechen</button>
+        <button class="confirm" id="force-confirm-btn" onclick="executeForceUpdate()" disabled>Force Update starten</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let logsOpen = false;
+    let history = [];
+    let historyIndex = -1;
+    let forceToken = null;
+
+    function formatUptime(sec) {
+      if (!sec) return '—';
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+      if (h > 24) return `${Math.floor(h/24)}d ${h%24}h`;
+      return `${h}h ${m}m`;
+    }
+
+    function toast(msg, type = 'success') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast show ${type}`;
+      setTimeout(() => t.classList.remove('show'), 4000);
+    }
+
+    async function updateStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        const badge = document.getElementById('status-badge');
+
+        if (data.running) {
+          badge.className = 'status-badge running';
+          document.getElementById('status-text').textContent = 'Läuft';
+        } else {
+          badge.className = 'status-badge stopped';
+          document.getElementById('status-text').textContent = 'Gestoppt';
+        }
+        document.getElementById('uptime').textContent = formatUptime(data.uptime);
+        document.getElementById('players').textContent = data.playerCount !== null ? `${data.playerCount}` : '—';
+        document.getElementById('currentmap').textContent = data.currentMap || '—';
+
+        document.getElementById('btn-start').disabled = data.running;
+        document.getElementById('btn-restart').disabled = !data.running;
+        document.getElementById('btn-stop').disabled = !data.running;
+        document.querySelectorAll('.maps button').forEach(b => b.disabled = !data.running);
+        document.querySelectorAll('button.macro').forEach(b => b.disabled = !data.running);
+        document.getElementById('rcon-input').disabled = !data.running;
+      } catch (err) {
+        toast('Status-Fehler', 'error');
+      }
+    }
+
+    async function action(type) {
+      document.querySelectorAll('button').forEach(b => b.disabled = true);
+      try {
+        const res = await fetch(`/api/${type}`, { method: 'POST' });
+        const data = await res.json();
+        toast(data.success ? `Server ${data.action}` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
+      } catch { toast('Netzwerk-Fehler', 'error'); }
+      setTimeout(updateStatus, 2000);
+    }
+
+    async function loadMap(workshopId, name) {
+      document.querySelectorAll('.maps button').forEach(b => b.disabled = true);
+      toast(`Lade ${name} (PropHunt-Setup)...`, 'success');
+      try {
+        const res = await fetch('/api/map', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ workshopId })
+        });
+        const data = await res.json();
+        toast(data.success ? `→ ${name} (${data.count} Cmds)` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
+      } catch { toast('Netzwerk-Fehler', 'error'); }
+      setTimeout(updateStatus, 4000);
+    }
+
+    async function macro(id, label) {
+      document.querySelectorAll('button.macro').forEach(b => b.disabled = true);
+      toast(`Führe aus: ${label}...`, 'success');
+      try {
+        const res = await fetch('/api/macro', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        toast(data.success ? `✓ ${label} (${data.count} Cmds)` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
+      } catch { toast('Netzwerk-Fehler', 'error'); }
+      setTimeout(updateStatus, 4000);
+    }
+
+    async function openForceUpdateModal() {
+      try {
+        const res = await fetch('/api/force-update/token', { method: 'POST' });
+        const data = await res.json();
+        forceToken = data.token;
+      } catch {
+        toast('Konnte Token nicht holen', 'error');
+        return;
+      }
+      document.getElementById('force-confirm-input').value = '';
+      document.getElementById('force-confirm-btn').disabled = true;
+      document.getElementById('modal-force-update').classList.add('show');
+      setTimeout(() => document.getElementById('force-confirm-input').focus(), 100);
+    }
+
+    function closeForceUpdateModal() {
+      document.getElementById('modal-force-update').classList.remove('show');
+      forceToken = null;
+    }
+
+    function updateForceConfirm() {
+      const input = document.getElementById('force-confirm-input').value;
+      document.getElementById('force-confirm-btn').disabled = (input !== 'FORCE-UPDATE-JETZT');
+    }
+
+    async function executeForceUpdate() {
+      const confirm = document.getElementById('force-confirm-input').value;
+      const btn = document.getElementById('force-confirm-btn');
+      btn.disabled = true; btn.textContent = 'Läuft...';
+
+      try {
+        const res = await fetch('/api/force-update', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: forceToken, confirm })
+        });
+        const data = await res.json();
+        if (data.success) {
+          toast('Force Update gestartet — CS2 lädt neu (~30-40 Min)', 'success');
+          closeForceUpdateModal();
+        } else {
+          toast('Fehler: ' + (data.error || '?'), 'error');
+          btn.disabled = false; btn.textContent = 'Force Update starten';
+        }
+      } catch (err) {
+        toast('Netzwerk-Fehler', 'error');
+        btn.disabled = false; btn.textContent = 'Force Update starten';
+      }
+      setTimeout(updateStatus, 3000);
+    }
+
+    async function sendRcon() {
+      const input = document.getElementById('rcon-input');
+      const cmd = input.value.trim();
+      if (!cmd) return;
+      history.unshift(cmd);
+      if (history.length > 50) history.pop();
+      historyIndex = -1;
+
+      const term = document.getElementById('terminal');
+      const ph = term.querySelector('.placeholder');
+      if (ph) ph.remove();
+
+      const entry = document.createElement('div');
+      entry.className = 'entry';
+      entry.innerHTML = `<div><span class="prompt">$</span> <span class="cmd">${escapeHtml(cmd)}</span></div>`;
+      term.appendChild(entry);
+
+      input.value = ''; input.disabled = true;
+
+      try {
+        const res = await fetch('/api/rcon', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd })
+        });
+        const data = await res.json();
+        const responseDiv = document.createElement('div');
+        if (data.success) {
+          responseDiv.className = 'resp';
+          responseDiv.textContent = data.response;
+        } else {
+          responseDiv.className = 'err';
+          responseDiv.textContent = data.error || 'Unbekannter Fehler';
+        }
+        entry.appendChild(responseDiv);
+      } catch (err) {
+        const responseDiv = document.createElement('div');
+        responseDiv.className = 'err'; responseDiv.textContent = 'Netzwerk-Fehler';
+        entry.appendChild(responseDiv);
+      }
+
+      input.disabled = false; input.focus();
+      term.scrollTop = term.scrollHeight;
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter') { e.preventDefault(); sendRcon(); }
+      else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (historyIndex < history.length - 1) {
+          historyIndex++;
+          document.getElementById('rcon-input').value = history[historyIndex];
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (historyIndex > 0) {
+          historyIndex--;
+          document.getElementById('rcon-input').value = history[historyIndex];
+        } else if (historyIndex === 0) {
+          historyIndex = -1;
+          document.getElementById('rcon-input').value = '';
+        }
+      }
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function toggleLogs() {
+      logsOpen = !logsOpen;
+      const content = document.getElementById('logs-content');
+      const toggle = document.getElementById('logs-toggle-text');
+      if (logsOpen) {
+        content.classList.add('open');
+        toggle.textContent = '▾ Container-Logs ausblenden';
+        await loadLogs();
+      } else {
+        content.classList.remove('open');
+        toggle.textContent = '▸ Container-Logs anzeigen';
+      }
+    }
+
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/logs');
+        const text = await res.text();
+        document.getElementById('logs-content').textContent = text || '—';
+      } catch { document.getElementById('logs-content').textContent = 'Fehler beim Laden'; }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('modal-force-update');
+        if (modal.classList.contains('show')) closeForceUpdateModal();
+      }
+    });
+
+    updateStatus();
+    setInterval(updateStatus, 5000);
+    setInterval(() => { if (logsOpen) loadLogs(); }, 10000);
+  </script>
+</body>
+</html>
