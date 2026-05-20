@@ -23,8 +23,8 @@ Ein leichtgewichtiges Web-Panel zum Verwalten eines [kus/cs2-modded-server](http
 ### 1. Repository klonen
 
 ```bash
-git clone https://github.com/USERNAME/cs2-control-panel.git
-cd cs2-control-panel
+git clone https://github.com/USERNAME/cs2-control.git
+cd cs2-control
 ```
 
 ### 2. Konfiguration
@@ -72,10 +72,10 @@ Statt das Image auf jedem Server lokal zu bauen, kann GitHub Actions das Image b
 ### Einmalig: Repo auf GitHub anlegen
 
 ```bash
-gh repo create cs2-control-panel --public --source=. --push
+gh repo create cs2-control --public --source=. --push
 ```
 
-Sobald gepusht: Der Workflow `.github/workflows/docker-image.yml` läuft automatisch los und published das Image nach `ghcr.io/<USERNAME>/cs2-control-panel:latest`.
+Sobald gepusht: Der Workflow `.github/workflows/docker-image.yml` läuft automatisch los und published das Image nach `ghcr.io/<USERNAME>/cs2-control:latest`.
 
 Status der Builds:
 
@@ -88,7 +88,7 @@ gh run watch
 
 Standardmäßig ist das ghcr-Package privat. Für public Pull ohne Login:
 
-1. GitHub → dein Profil → **Packages** → `cs2-control-panel`
+1. GitHub → dein Profil → **Packages** → `cs2-control`
 2. Package settings → **Change visibility** → **Public**
 
 ### Auf dem Server deployen

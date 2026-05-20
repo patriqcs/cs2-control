@@ -1,6 +1,6 @@
 services:
   cs2-control:
-    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER in .env to your GitHub username/org (lowercase)}/cs2-control-panel:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER in .env to your GitHub username/org (lowercase)}/cs2-control:${IMAGE_TAG:-latest}
     container_name: cs2-control
     restart: unless-stopped
     pull_policy: always
