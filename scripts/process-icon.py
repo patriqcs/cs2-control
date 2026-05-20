@@ -1,12 +1,12 @@
 """
 Verarbeitet das Server-Icon:
-- Entfernt das ins PNG gerenderte Schachbrett-Pseudo-Transparenz-Muster
+- Entfernt den als PNG mitgerenderten Hintergrund (Schachbrett-Pseudo-Transparenz ODER weiss/hellgrau)
 - Erkennt die abgerundete Ecken-Maske des Icons und macht alles ausserhalb echt transparent
 - Rendert mehrere Groessen fuer Favicon (16/32/48 ICO) + Unraid (256x256 PNG)
 
 Annahme: Das Icon ist quadratisch mit einem dunklen Squircle/Rounded-Rect-Hintergrund.
-Strategie zur Maskenermittlung: Pixel-Helligkeit < Schwelle = Icon. Helligkeit ueber
-Schwelle (= Schachbrett-Grau) = Hintergrund -> transparent.
+Strategie zur Maskenermittlung: Grau-neutrale, helle Pixel (Schachbrett-Grau ODER weiss)
+= Hintergrund -> transparent. Icon-Pixel sind dunkel oder kraeftig gesaettigt.
 """
 
 from PIL import Image
@@ -17,19 +17,18 @@ OUT_DIR = Path(__file__).resolve().parent.parent / "public" / "icons"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def is_checkerboard_pixel(r: int, g: int, b: int) -> bool:
+def is_background_pixel(r: int, g: int, b: int) -> bool:
     """
-    Schachbrett besteht aus mittelgrauen Pixeln. Genauer:
-    - hellgrau ~ (200-210, 200-210, 200-210)
-    - dunkelgrau ~ (180-190, 180-190, 180-190)
-    Beide sind annaehernd farbneutral und im mittleren Helligkeitsbereich.
-    Pixel im Icon selbst sind entweder dunkel (Schwarz, Dunkelblau)
-    oder leuchtende Akzente (Orange, Cyan, hellblau) - alle stark gesaettigt
-    oder sehr dunkel.
+    Hintergrund-Pixel sind grau-neutral UND hell. Deckt beide bekannten
+    Hintergrund-Varianten ab:
+    - Schachbrett-Grau: 170-220
+    - Weiss / Hellgrau: 220-255
+    Icon-Pixel sind entweder sehr dunkel (Schwarz, Dunkelblau) oder
+    kraeftig gesaettigt (Orange, Cyan, Hellblau) - faellt nie in diese Range.
     """
     grey_neutral = abs(r - g) < 8 and abs(g - b) < 8 and abs(r - b) < 8
-    in_checker_range = 170 <= r <= 220
-    return grey_neutral and in_checker_range
+    in_bg_range = 170 <= r <= 255
+    return grey_neutral and in_bg_range
 
 
 def build_alpha_mask(img: Image.Image) -> Image.Image:
@@ -43,7 +42,7 @@ def build_alpha_mask(img: Image.Image) -> Image.Image:
     for y in range(h):
         for x in range(w):
             r, g, b = src_pixels[x, y]
-            if is_checkerboard_pixel(r, g, b):
+            if is_background_pixel(r, g, b):
                 alpha_pixels[x, y] = 0
 
     return alpha
@@ -68,7 +67,7 @@ def flood_fill_corners_transparent(rgba: Image.Image) -> Image.Image:
             continue
         visited[x][y] = True
         r, g, b, a = pixels[x, y]
-        if a == 0 or is_checkerboard_pixel(r, g, b):
+        if a == 0 or is_background_pixel(r, g, b):
             pixels[x, y] = (0, 0, 0, 0)
             stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)])
 
