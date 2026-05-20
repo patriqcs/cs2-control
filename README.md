@@ -207,6 +207,15 @@ docker compose -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.ghcr.yml up -d
 ```
 
+## Unraid
+
+Die Compose-Dateien setzen die nötigen `net.unraid.docker.*` Labels:
+
+- **Icon**: zieht `/icons/icon.png` vom laufenden Panel selbst — setze `PANEL_HOST` in `.env` auf deine Unraid-IP, sonst zeigt Unraid das Default-Container-Icon
+- **WebUI**: Klick aufs Container-Icon im Unraid-Dashboard öffnet `http://<PANEL_HOST>:<PANEL_PORT>` direkt
+
+Alternativ: In der Unraid-WebUI unter Container → Edit → Icon URL einen permanenten Pfad eintragen (z.B. nach `/mnt/user/system/docker/icons/cs2-control.png` kopiert).
+
 ## Architektur
 
 - **Backend**: Node.js + Express
