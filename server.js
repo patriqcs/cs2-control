@@ -158,6 +158,8 @@ const MACROS = {
             { cmd: 'exec casual.cfg',                                        delay: 1500 },
             { cmd: 'exec settings/enable_random_round.cfg',                  delay: 800 },
             { cmd: 'exec settings/enable_dice.cfg',                          delay: 1000 },
+            { cmd: 'sv_alltalk 0',                                           delay: 200 },
+            { cmd: 'sv_full_alltalk 0',                                      delay: 200 },
             { cmd: 'exec_after_map_start "exec settings/disable_bots.cfg"',  delay: 200 },
             { cmd: 'changelevel de_dust2',                                   delay: 0 }
         ]

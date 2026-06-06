@@ -1,6 +1,6 @@
 {
   "name": "cs2-control-panel",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Lightweight web panel to manage a kus/cs2-modded-server Docker container with RCON, map switching, config macros, and force update.",
   "main": "server.js",
   "scripts": {
