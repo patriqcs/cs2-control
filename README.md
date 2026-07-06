@@ -180,14 +180,21 @@ Beim Klick auf eine PropHunt-Map werden folgende Commands gesendet:
 1. `exec settings/disable_random_round.cfg` — Random Rounds aus
 2. `exec settings/disable_dice.cfg` — RTD aus
 3. `exec casual.cfg` — Casual-Mode als Basis
-4. PropHunt-Convars: `mp_freezetime 5`, `mp_buy_anywhere 0`, `mp_friendlyfire 0`, `sv_alltalk 1`, etc.
-5. `exec_after_map_start "exec settings/disable_bots.cfg"` — Bots werden NACH Map-Load gekickt
-6. `host_workshop_map WORKSHOP_ID` — Map laden
+4. `exec_after_map_start "exec casual_settings.cfg; exec settings/disable_bots.cfg; mp_freezetime 5; …; sv_alltalk 1; sv_full_alltalk 1"` — alles, was den Map-Load überleben muss (siehe unten)
+5. `host_workshop_map WORKSHOP_ID` — Map laden
+
+CS2 führt beim Map-Load die gamemode-cfg (`gamemode_casual.cfg`) neu aus und resettet dabei ConVars (u.a. `mp_startmoney`, `mp_maxrounds`, `mp_warmuptime`, `sv_alltalk`). Deshalb stecken **alle** PropHunt-Convars, das Bot-Kicken und AllTalk im `exec_after_map_start`-String (gebaut von `afterMapStart()` in `server.js`) und werden NACH dem Map-Load gesetzt.
 
 ## Cursed Config Macros
 
-**AN**: Casual → Random Rounds an → Dice an → disable_bots queue → changelevel de_dust2
-**AUS**: Random Rounds aus → Dice aus → Casual → disable_bots queue → changelevel de_dust2
+**AN**: Casual → Random Rounds an → Dice an → AllTalk sofort aus (Fallback) → after-map-start queue → changelevel de_dust2
+**AUS**: Random Rounds aus → Dice aus → Casual → AllTalk sofort aus (Fallback) → after-map-start queue → changelevel de_dust2
+
+Beide Macros setzen per `exec_after_map_start` nach dem Map-Load `sv_alltalk 0` und `sv_full_alltalk 0` (AllTalk-Reset nach PropHunt) und kicken die Bots; zusätzlich wird AllTalk sofort deaktiviert, falls das `changelevel` fehlschlägt.
+
+**Wichtig**: `exec_after_map_start` (Plugin [CS2_ExecAfter](https://github.com/kus/CS2_ExecAfter)) speichert nur EINEN Command-String — ein zweiter Aufruf überschreibt den ersten. Deshalb baut `afterMapStart()` in `server.js` alle Befehle per Semikolon zu einem Aufruf zusammen und nimmt immer `exec casual_settings.cfg` mit auf: kus' `casual.cfg` queued diese Datei selbst per `exec_after_map_start`, und unser Aufruf würde den Eintrag sonst verwerfen (eigene Anpassungen in `casual_settings.cfg` gingen verloren).
+
+Der Hook ist **persistent**: Er feuert bei jedem künftigen Map-Start (auch bei Mapwechseln per RCON-Konsole oder In-Game-Vote), bis ihn der nächste Panel-Button überschreibt. Nach einer PropHunt-Session bleibt AllTalk also über Mapwechsel hinweg an, bis ein Cursed-Button gedrückt wird.
 
 ## Eigene Macros hinzufügen
 

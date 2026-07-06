@@ -38,10 +38,16 @@ async function sendRconSequence(commands) {
     const results = [];
     for (const item of commands) {
         const cmd = typeof item === 'string' ? item : item.cmd;
-        const delayMs = typeof item === 'object' ? (item.delay || 500) : 500;
+        const delayMs = typeof item === 'object' ? (item.delay ?? 500) : 500;
         try {
             const r = await sendRcon(cmd);
-            results.push({ cmd, ok: true, response: r });
+            // CS2 meldet unbekannte Commands als normale Text-Response, nicht als Fehler
+            // (z.B. wenn das CS2_ExecAfter-Plugin nach einem Update nicht laedt).
+            if (/unknown command/i.test(r || '')) {
+                results.push({ cmd, ok: false, error: r.trim() });
+            } else {
+                results.push({ cmd, ok: true, response: r });
+            }
         } catch (err) {
             results.push({ cmd, ok: false, error: err.message });
         }
@@ -96,27 +102,38 @@ const ALLOWED_MAPS = {
     '3615968422': 'Mirage PropHunt'
 };
 
-function buildPropHuntSequence(workshopId, mapName) {
+const PROPHUNT_CONVARS = [
+    'mp_freezetime 5',
+    'mp_roundtime 3',
+    'mp_roundtime_defuse 3',
+    'mp_friendlyfire 0',
+    'mp_buy_anywhere 0',
+    'mp_buytime 0',
+    'mp_startmoney 0',
+    'mp_maxmoney 0',
+    'mp_afterroundmoney 0',
+    'mp_playercashawards 0',
+    'mp_teamcashawards 0',
+    'mp_warmuptime 30',
+    'mp_maxrounds 10'
+];
+
+// Map-Load fuehrt die gamemode-cfg neu aus und resettet ConVars — alles, was danach
+// gelten soll, gehoert in exec_after_map_start (Plugin CS2_ExecAfter). Das Plugin
+// speichert nur EINEN String, ein zweiter Aufruf ueberschreibt den ersten — daher
+// hier alles kombinieren. casual_settings.cfg zuerst, weil kus' casual.cfg diese
+// selbst per exec_after_map_start queued und unser Aufruf den Eintrag sonst verwirft.
+function afterMapStart(commands) {
+    const all = ['exec casual_settings.cfg', 'exec settings/disable_bots.cfg', ...commands];
+    return { cmd: `exec_after_map_start "${all.join('; ')}"`, delay: 200 };
+}
+
+function buildPropHuntSequence(workshopId) {
     return [
         { cmd: 'exec settings/disable_random_round.cfg',                 delay: 800 },
         { cmd: 'exec settings/disable_dice.cfg',                         delay: 1000 },
         { cmd: 'exec casual.cfg',                                        delay: 1500 },
-        { cmd: 'mp_freezetime 5',                                        delay: 200 },
-        { cmd: 'mp_roundtime 3',                                         delay: 200 },
-        { cmd: 'mp_roundtime_defuse 3',                                  delay: 200 },
-        { cmd: 'mp_friendlyfire 0',                                      delay: 200 },
-        { cmd: 'mp_buy_anywhere 0',                                      delay: 200 },
-        { cmd: 'mp_buytime 0',                                           delay: 200 },
-        { cmd: 'mp_startmoney 0',                                        delay: 200 },
-        { cmd: 'mp_maxmoney 0',                                          delay: 200 },
-        { cmd: 'mp_afterroundmoney 0',                                   delay: 200 },
-        { cmd: 'mp_playercashawards 0',                                  delay: 200 },
-        { cmd: 'mp_teamcashawards 0',                                    delay: 200 },
-        { cmd: 'mp_warmuptime 30',                                       delay: 200 },
-        { cmd: 'mp_maxrounds 10',                                        delay: 200 },
-        { cmd: 'sv_alltalk 1',                                           delay: 200 },
-        { cmd: 'sv_full_alltalk 1',                                      delay: 500 },
-        { cmd: 'exec_after_map_start "exec settings/disable_bots.cfg"',  delay: 200 },
+        afterMapStart([...PROPHUNT_CONVARS, 'sv_alltalk 1', 'sv_full_alltalk 1']),
         { cmd: `host_workshop_map ${workshopId}`,                        delay: 0 }
     ];
 }
@@ -125,7 +142,7 @@ app.post('/api/map', async (req, res) => {
     const { workshopId } = req.body;
     if (!ALLOWED_MAPS[workshopId]) return res.status(400).json({ error: 'Map nicht erlaubt' });
     try {
-        const sequence = buildPropHuntSequence(workshopId, ALLOWED_MAPS[workshopId]);
+        const sequence = buildPropHuntSequence(workshopId);
         const results = await sendRconSequence(sequence);
         const failed = results.filter(r => !r.ok);
         if (failed.length > 0) {
@@ -158,9 +175,10 @@ const MACROS = {
             { cmd: 'exec casual.cfg',                                        delay: 1500 },
             { cmd: 'exec settings/enable_random_round.cfg',                  delay: 800 },
             { cmd: 'exec settings/enable_dice.cfg',                          delay: 1000 },
+            // Sofort-Fallback, falls changelevel fehlschlaegt und der Hook nie feuert
             { cmd: 'sv_alltalk 0',                                           delay: 200 },
             { cmd: 'sv_full_alltalk 0',                                      delay: 200 },
-            { cmd: 'exec_after_map_start "exec settings/disable_bots.cfg"',  delay: 200 },
+            afterMapStart(['sv_alltalk 0', 'sv_full_alltalk 0']),
             { cmd: 'changelevel de_dust2',                                   delay: 0 }
         ]
     },
@@ -170,7 +188,10 @@ const MACROS = {
             { cmd: 'exec settings/disable_random_round.cfg',                 delay: 800 },
             { cmd: 'exec settings/disable_dice.cfg',                         delay: 1000 },
             { cmd: 'exec casual.cfg',                                        delay: 1500 },
-            { cmd: 'exec_after_map_start "exec settings/disable_bots.cfg"',  delay: 200 },
+            // Sofort-Fallback, falls changelevel fehlschlaegt und der Hook nie feuert
+            { cmd: 'sv_alltalk 0',                                           delay: 200 },
+            { cmd: 'sv_full_alltalk 0',                                      delay: 200 },
+            afterMapStart(['sv_alltalk 0', 'sv_full_alltalk 0']),
             { cmd: 'changelevel de_dust2',                                   delay: 0 }
         ]
     }
