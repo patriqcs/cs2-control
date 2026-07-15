@@ -262,9 +262,182 @@ app.post('/api/force-update', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ============================================================================
+// Palworld (palchaos-server auf demselben Host, gesteuert über den Docker-Socket)
+// ============================================================================
+const PAL_CONTAINER = process.env.PALWORLD_CONTAINER || 'palchaos-server';
+const PAL_GAME_HOST_PATH = process.env.PALWORLD_GAME_HOST_PATH || '/mnt/cache/appdata/palchaos-server/game';
+const PAL_UPDATE_IMAGE = process.env.PALWORLD_UPDATE_IMAGE || 'ghcr.io/adam2893/palworld-proton-server:latest';
+const PAL_APPID = process.env.PALWORLD_APPID || '2394010';
+
+// SteamCMD-Update im Wegwerf-Container gegen das game-Volume des Servers.
+// app_info_update + doppeltes app_update sind Absicht: mit frischem SteamCMD-
+// Cache bricht der erste Lauf sonst mit "state 0x6" / "Missing configuration" ab.
+const PAL_STEAMCMD_SCRIPT = [
+    'gosu steam /home/steam/steamcmd/steamcmd.sh',
+    '+@sSteamCmdForcePlatformType windows',
+    '+force_install_dir /palworld',
+    '+login anonymous',
+    '+app_info_update 1',
+    `+app_update ${PAL_APPID} validate`,
+    `+app_update ${PAL_APPID} validate`,
+    '+quit'
+].join(' ');
+
+const palUpdateJob = {
+    running: false, startedAt: null, finishedAt: null, success: null, log: []
+};
+
+function palLog(line) {
+    const clean = String(line).replace(/\x1b\[[0-9;]*m/g, '').replace(/\r/g, '').trimEnd();
+    if (!clean) return;
+    palUpdateJob.log.push(`[${new Date().toLocaleTimeString('de-DE')}] ${clean}`);
+    if (palUpdateJob.log.length > 400) palUpdateJob.log.splice(0, palUpdateJob.log.length - 400);
+}
+
+async function palEnsureUpdateImage() {
+    try {
+        await docker.getImage(PAL_UPDATE_IMAGE).inspect();
+    } catch {
+        palLog(`Update-Image nicht lokal, ziehe ${PAL_UPDATE_IMAGE} ...`);
+        const stream = await docker.pull(PAL_UPDATE_IMAGE);
+        await new Promise((resolve, reject) =>
+            docker.modem.followProgress(stream, err => err ? reject(err) : resolve()));
+        palLog('Image gezogen.');
+    }
+}
+
+async function palRunSteamcmd() {
+    const { Writable } = require('stream');
+    let tail = '';
+    const sink = new Writable({
+        write(chunk, enc, cb) {
+            const lines = (tail + chunk.toString()).split('\n');
+            tail = lines.pop();
+            // SteamCMD spammt Progress-Zeilen im Sekundentakt — nur jede Änderung loggen
+            for (const l of lines) palLog(l);
+            cb();
+        }
+    });
+    const [result] = await docker.run(PAL_UPDATE_IMAGE, ['-c', PAL_STEAMCMD_SCRIPT], sink, {
+        Entrypoint: ['sh'],
+        Tty: true,
+        HostConfig: {
+            Binds: [`${PAL_GAME_HOST_PATH}:/palworld`],
+            AutoRemove: true
+        }
+    });
+    if (tail) palLog(tail);
+    return result;
+}
+
+async function palRunUpdate() {
+    const container = docker.getContainer(PAL_CONTAINER);
+    try {
+        palLog('=== Palworld-Update gestartet ===');
+
+        let wasRunning = false;
+        try {
+            wasRunning = (await container.inspect()).State.Running;
+        } catch (e) {
+            throw new Error(`Container ${PAL_CONTAINER} nicht gefunden: ${e.message}`);
+        }
+
+        if (wasRunning) {
+            palLog(`Stoppe ${PAL_CONTAINER} (Spieler werden getrennt) ...`);
+            await container.stop({ t: 60 });
+            palLog('Container gestoppt.');
+        } else {
+            palLog(`${PAL_CONTAINER} läuft nicht — Update ohne Stop.`);
+        }
+
+        await palEnsureUpdateImage();
+        palLog('Starte SteamCMD-Update (kann einige Minuten dauern) ...');
+        const result = await palRunSteamcmd();
+
+        const success = palUpdateJob.log.some(l => /Success!.*fully installed/i.test(l));
+        if (!success) {
+            throw new Error(`SteamCMD ohne Erfolgsmeldung beendet (Exit ${result?.StatusCode ?? '?'})`);
+        }
+        palLog('SteamCMD: Update erfolgreich installiert.');
+
+        palLog(`Starte ${PAL_CONTAINER} neu ...`);
+        await container.start();
+        palLog('Container gestartet — Server bootet (UE4SS + Mod laden, ~1-2 Min).');
+        palLog('=== Palworld-Update abgeschlossen ===');
+        palUpdateJob.success = true;
+    } catch (err) {
+        palLog(`FEHLER: ${err.message}`);
+        palUpdateJob.success = false;
+        // Server trotzdem wieder hochbringen, sonst bleibt er nach Fehlschlag unten
+        try {
+            const info = await container.inspect();
+            if (!info.State.Running) {
+                palLog(`Versuche ${PAL_CONTAINER} trotzdem zu starten ...`);
+                await container.start();
+                palLog('Container gestartet (alte Version).');
+            }
+        } catch (e) { palLog(`Neustart fehlgeschlagen: ${e.message}`); }
+    } finally {
+        palUpdateJob.running = false;
+        palUpdateJob.finishedAt = Date.now();
+    }
+}
+
+app.get('/api/palworld/status', async (req, res) => {
+    try {
+        const info = await docker.getContainer(PAL_CONTAINER).inspect();
+        res.json({
+            container: PAL_CONTAINER,
+            state: info.State.Status,
+            running: info.State.Running,
+            health: info.State.Health ? info.State.Health.Status : null,
+            uptime: info.State.Running ? Math.floor((Date.now() - new Date(info.State.StartedAt).getTime()) / 1000) : 0,
+            updating: palUpdateJob.running
+        });
+    } catch (err) { res.status(500).json({ error: err.message, container: PAL_CONTAINER }); }
+});
+
+app.post('/api/palworld/start', async (req, res) => {
+    if (palUpdateJob.running) return res.status(409).json({ error: 'Update läuft gerade' });
+    try { await docker.getContainer(PAL_CONTAINER).start(); res.json({ success: true, action: 'gestartet' }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/palworld/stop', async (req, res) => {
+    if (palUpdateJob.running) return res.status(409).json({ error: 'Update läuft gerade' });
+    try { await docker.getContainer(PAL_CONTAINER).stop({ t: 60 }); res.json({ success: true, action: 'gestoppt' }); }
+    catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/palworld/update', (req, res) => {
+    if (palUpdateJob.running) return res.status(409).json({ error: 'Update läuft bereits' });
+    palUpdateJob.running = true;
+    palUpdateJob.startedAt = Date.now();
+    palUpdateJob.finishedAt = null;
+    palUpdateJob.success = null;
+    palUpdateJob.log = [];
+    palRunUpdate(); // läuft asynchron weiter, Fortschritt über /api/palworld/update/status
+    res.json({ success: true, action: 'Update gestartet' });
+});
+
+app.get('/api/palworld/update/status', (req, res) => {
+    res.json(palUpdateJob);
+});
+
+app.get('/api/palworld/logs', async (req, res) => {
+    try {
+        const logs = await docker.getContainer(PAL_CONTAINER).logs({
+            stdout: true, stderr: true, tail: 100, timestamps: true
+        });
+        res.type('text/plain').send(logs.toString());
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.listen(PORT, () => {
     console.log(`CS2 Control Panel läuft auf Port ${PORT}`);
     console.log(`Container: ${CONTAINER_NAME}`);
     console.log(`RCON: ${RCON_HOST}:${RCON_PORT}`);
     console.log(`CS2 Data Path: ${CS2_DATA_PATH}`);
+    console.log(`Palworld-Container: ${PAL_CONTAINER}`);
 });

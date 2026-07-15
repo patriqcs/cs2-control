@@ -230,6 +230,52 @@
     <div class="footer">patriQ's CS2 Control Panel</div>
   </div>
 
+  <div class="card">
+    <div class="header">
+      <div class="title">
+        <h1>Palworld Server</h1>
+        <p id="pal-container-name">palchaos-server</p>
+      </div>
+      <div id="pal-status-badge" class="status-badge loading">
+        <span class="status-dot"></span>
+        <span id="pal-status-text">Lade...</span>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat">Uptime<strong id="pal-uptime">—</strong></div>
+      <div class="stat">Health<strong id="pal-health">—</strong></div>
+      <div class="stat">Update<strong id="pal-update-state">—</strong></div>
+    </div>
+
+    <div class="section-label">Server</div>
+    <div class="actions two">
+      <button class="start" id="pal-btn-start" onclick="palAction('start')">▶ Start</button>
+      <button class="stop" id="pal-btn-stop" onclick="palAction('stop')">■ Stop</button>
+    </div>
+
+    <div class="section-label">Update</div>
+    <button class="restart" id="pal-btn-update" style="width:100%" onclick="palStartUpdate()">⬇ Server updaten (SteamCMD)</button>
+    <p style="font-size:11px; color:#888; margin-top:6px; line-height:1.5;">
+      Stoppt den Server, lädt die aktuelle Version über SteamCMD und startet danach
+      automatisch neu. Spieler werden dabei getrennt.
+    </p>
+
+    <div class="logs-section">
+      <button class="logs-toggle" onclick="palToggleUpdateLog()">
+        <span id="pal-update-log-toggle-text">▸ Update-Log anzeigen</span>
+      </button>
+      <div class="logs-content" id="pal-update-log">Noch kein Update gelaufen.</div>
+    </div>
+
+    <div class="logs-section">
+      <button class="logs-toggle" onclick="palToggleLogs()">
+        <span id="pal-logs-toggle-text">▸ Container-Logs anzeigen</span>
+      </button>
+      <div class="logs-content" id="pal-logs-content">Lädt...</div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <div class="modal-backdrop" id="modal-force-update">
@@ -485,9 +531,157 @@
       }
     });
 
+    // ==== Palworld ====
+    let palLogsOpen = false;
+    let palUpdateLogOpen = false;
+    let palUpdatePoller = null;
+
+    async function updatePalStatus() {
+      try {
+        const res = await fetch('/api/palworld/status');
+        const data = await res.json();
+        const badge = document.getElementById('pal-status-badge');
+
+        if (data.error) {
+          badge.className = 'status-badge stopped';
+          document.getElementById('pal-status-text').textContent = 'Fehler';
+          return;
+        }
+        document.getElementById('pal-container-name').textContent = data.container;
+
+        if (data.updating) {
+          badge.className = 'status-badge loading';
+          document.getElementById('pal-status-text').textContent = 'Update läuft';
+        } else if (data.running) {
+          badge.className = 'status-badge running';
+          document.getElementById('pal-status-text').textContent = 'Läuft';
+        } else {
+          badge.className = 'status-badge stopped';
+          document.getElementById('pal-status-text').textContent = 'Gestoppt';
+        }
+        document.getElementById('pal-uptime').textContent = formatUptime(data.uptime);
+        document.getElementById('pal-health').textContent = data.health || '—';
+        if (!data.updating) {
+          document.getElementById('pal-update-state').textContent = '—';
+        }
+
+        document.getElementById('pal-btn-start').disabled = data.running || data.updating;
+        document.getElementById('pal-btn-stop').disabled = !data.running || data.updating;
+        document.getElementById('pal-btn-update').disabled = data.updating;
+      } catch {
+        document.getElementById('pal-status-badge').className = 'status-badge stopped';
+        document.getElementById('pal-status-text').textContent = 'Fehler';
+      }
+    }
+
+    async function palAction(type) {
+      document.getElementById('pal-btn-start').disabled = true;
+      document.getElementById('pal-btn-stop').disabled = true;
+      try {
+        const res = await fetch(`/api/palworld/${type}`, { method: 'POST' });
+        const data = await res.json();
+        toast(data.success ? `Palworld ${data.action}` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
+      } catch { toast('Netzwerk-Fehler', 'error'); }
+      setTimeout(updatePalStatus, 2000);
+    }
+
+    async function palStartUpdate() {
+      if (!confirm('Palworld-Server updaten? Der Server wird gestoppt, aktualisiert und automatisch neu gestartet. Spieler werden getrennt.')) return;
+      document.getElementById('pal-btn-update').disabled = true;
+      try {
+        const res = await fetch('/api/palworld/update', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          toast('Palworld-Update gestartet', 'success');
+          if (!palUpdateLogOpen) palToggleUpdateLog();
+          palStartUpdatePolling();
+        } else {
+          toast('Fehler: ' + (data.error || '?'), 'error');
+        }
+      } catch { toast('Netzwerk-Fehler', 'error'); }
+      setTimeout(updatePalStatus, 1000);
+    }
+
+    function palStartUpdatePolling() {
+      if (palUpdatePoller) return;
+      palUpdatePoller = setInterval(palPollUpdateLog, 2000);
+      palPollUpdateLog();
+    }
+
+    async function palPollUpdateLog() {
+      try {
+        const res = await fetch('/api/palworld/update/status');
+        const job = await res.json();
+
+        const el = document.getElementById('pal-update-log');
+        if (job.log && job.log.length) {
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+          el.textContent = job.log.join('\n');
+          if (atBottom) el.scrollTop = el.scrollHeight;
+        }
+
+        const state = document.getElementById('pal-update-state');
+        if (job.running) {
+          state.textContent = 'läuft...';
+        } else {
+          if (palUpdatePoller) { clearInterval(palUpdatePoller); palUpdatePoller = null; }
+          if (job.finishedAt) {
+            state.textContent = job.success ? '✓ OK' : '✗ Fehler';
+            if (job.success !== null) {
+              toast(job.success ? 'Palworld-Update abgeschlossen' : 'Palworld-Update fehlgeschlagen (siehe Update-Log)', job.success ? 'success' : 'error');
+            }
+          }
+          updatePalStatus();
+        }
+      } catch { /* Poll-Fehler ignorieren, nächster Versuch kommt */ }
+    }
+
+    function palToggleUpdateLog() {
+      palUpdateLogOpen = !palUpdateLogOpen;
+      const content = document.getElementById('pal-update-log');
+      const toggle = document.getElementById('pal-update-log-toggle-text');
+      if (palUpdateLogOpen) {
+        content.classList.add('open');
+        toggle.textContent = '▾ Update-Log ausblenden';
+        palPollUpdateLog();
+      } else {
+        content.classList.remove('open');
+        toggle.textContent = '▸ Update-Log anzeigen';
+      }
+    }
+
+    async function palToggleLogs() {
+      palLogsOpen = !palLogsOpen;
+      const content = document.getElementById('pal-logs-content');
+      const toggle = document.getElementById('pal-logs-toggle-text');
+      if (palLogsOpen) {
+        content.classList.add('open');
+        toggle.textContent = '▾ Container-Logs ausblenden';
+        await palLoadLogs();
+      } else {
+        content.classList.remove('open');
+        toggle.textContent = '▸ Container-Logs anzeigen';
+      }
+    }
+
+    async function palLoadLogs() {
+      try {
+        const res = await fetch('/api/palworld/logs');
+        const text = await res.text();
+        document.getElementById('pal-logs-content').textContent = text || '—';
+      } catch { document.getElementById('pal-logs-content').textContent = 'Fehler beim Laden'; }
+    }
+
     updateStatus();
+    updatePalStatus();
     setInterval(updateStatus, 5000);
+    setInterval(updatePalStatus, 5000);
     setInterval(() => { if (logsOpen) loadLogs(); }, 10000);
+    setInterval(() => { if (palLogsOpen) palLoadLogs(); }, 10000);
+    // Falls beim Seitenladen schon ein Update läuft: Polling wieder aufnehmen
+    fetch('/api/palworld/update/status').then(r => r.json()).then(job => {
+      if (job.running) { if (!palUpdateLogOpen) palToggleUpdateLog(); palStartUpdatePolling(); }
+    }).catch(() => {});
   </script>
 </body>
 </html>

@@ -11,6 +11,7 @@ Ein leichtgewichtiges Web-Panel zum Verwalten eines [kus/cs2-modded-server](http
 - **Live Stats**: Uptime, Spieler-Count, aktuelle Map
 - **Container Logs**: Live-Anzeige der letzten 100 Log-Zeilen
 - **Force Update** (Danger Zone): CS2-Daten löschen und neu downloaden, mit doppelter Bestätigung
+- **Palworld-Steuerung**: Start/Stop des Palworld-Containers (z.B. `palchaos-server`) plus SteamCMD-Update mit Live-Log; der Server startet nach dem Update automatisch neu
 
 ## Voraussetzungen
 
@@ -46,6 +47,9 @@ Werte die du setzen musst:
 | `RCON_PASSWORD` | RCON-Passwort des CS2-Servers | aus CS2 Container Env |
 | `HOST_CS2_DATA_PATH` | Host-Pfad zum CS2-Daten-Ordner | `/mnt/cache/cs2moddedserver` |
 | `PANEL_PORT` | Port auf dem das Panel läuft | `3006` |
+| `PALWORLD_CONTAINER` | Name des Palworld-Containers (optional) | `palchaos-server` |
+| `PALWORLD_GAME_HOST_PATH` | Host-Pfad zum Palworld-game-Ordner (optional) | `/mnt/cache/appdata/palchaos-server/game` |
+| `PALWORLD_UPDATE_IMAGE` | Image, dessen SteamCMD fürs Palworld-Update genutzt wird (optional) | `ghcr.io/adam2893/palworld-proton-server:latest` |
 
 ### 3. Starten
 

@@ -17,6 +17,9 @@ services:
       - RCON_PORT=${RCON_PORT:-27015}
       - RCON_PASSWORD=${RCON_PASSWORD}
       - CS2_DATA_PATH=${CS2_DATA_PATH:-/cs2-data}
+      - PALWORLD_CONTAINER=${PALWORLD_CONTAINER:-palchaos-server}
+      - PALWORLD_GAME_HOST_PATH=${PALWORLD_GAME_HOST_PATH:-/mnt/cache/appdata/palchaos-server/game}
+      - PALWORLD_UPDATE_IMAGE=${PALWORLD_UPDATE_IMAGE:-ghcr.io/adam2893/palworld-proton-server:latest}
     labels:
       - net.unraid.docker.icon=http://${PANEL_HOST:-localhost}:${PANEL_PORT:-3006}/icons/icon.png
       - net.unraid.docker.webui=http://${PANEL_HOST:-localhost}:${PANEL_PORT:-3006}
