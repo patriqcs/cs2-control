@@ -12,6 +12,7 @@ Ein leichtgewichtiges Web-Panel zum Verwalten eines [kus/cs2-modded-server](http
 - **Container Logs**: Live-Anzeige der letzten 100 Log-Zeilen
 - **Force Update** (Danger Zone): CS2-Daten löschen und neu downloaden, mit doppelter Bestätigung
 - **Palworld-Steuerung**: Start/Stop des Palworld-Containers (z.B. `palchaos-server`) plus SteamCMD-Update mit Live-Log; der Server startet nach dem Update automatisch neu
+- **Palworld-Savegame-Export**: Button „Savegame speichern & exportieren" löst über die Server-REST-API (`POST /v1/api/save`, Basic-Auth mit dem `ADMIN_PASSWORD` aus dem Palworld-Container-Env) einen Save aus und lädt einen konsistenten Snapshot von `SaveGames/0` als tar.gz herunter. Voraussetzung: Palworld-Server mit `REST_API_ENABLED=true` und das Panel hängt am selben Docker-Netzwerk (`docker network connect palchaos-server_default kus-control` — nach jedem Recreate des Panel-Containers wiederholen). Ohne erreichbare REST-API wird trotzdem exportiert (letzter Autosave).
 
 ## Voraussetzungen
 
@@ -50,6 +51,7 @@ Werte die du setzen musst:
 | `PALWORLD_CONTAINER` | Name des Palworld-Containers (optional) | `palchaos-server` |
 | `PALWORLD_GAME_HOST_PATH` | Host-Pfad zum Palworld-game-Ordner (optional) | `/mnt/cache/appdata/palchaos-server/game` |
 | `PALWORLD_UPDATE_IMAGE` | Image, dessen SteamCMD fürs Palworld-Update genutzt wird (optional) | `ghcr.io/adam2893/palworld-proton-server:latest` |
+| `PALWORLD_REST_URL` | REST-API-Basis-URL des Palworld-Servers für den Save-Trigger (optional) | `http://palchaos-server:8212` |
 
 ### 3. Starten
 
