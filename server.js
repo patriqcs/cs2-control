@@ -425,6 +425,88 @@ app.get('/api/palworld/update/status', (req, res) => {
     res.json(palUpdateJob);
 });
 
+// Savegame-Export: erst den Server über seine REST-API speichern lassen
+// (best effort — ohne REST ist der Snapshot dank AutoSaveSpan=60 höchstens
+// eine Minute alt), dann einen konsistenten Snapshot per Wegwerf-Container
+// ziehen und als tar.gz-Download ausliefern.
+const PAL_REST_URL = process.env.PALWORLD_REST_URL || 'http://palchaos-server:8212';
+
+async function palAdminPassword() {
+    const info = await docker.getContainer(PAL_CONTAINER).inspect();
+    const entry = (info.Config.Env || []).find(e => e.startsWith('ADMIN_PASSWORD='));
+    return entry ? entry.slice('ADMIN_PASSWORD='.length) : '';
+}
+
+async function palTriggerSave() {
+    const auth = Buffer.from(`admin:${await palAdminPassword()}`).toString('base64');
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15000);
+    try {
+        const r = await fetch(`${PAL_REST_URL}/v1/api/save`, {
+            method: 'POST',
+            headers: { Authorization: `Basic ${auth}` },
+            signal: ctl.signal
+        });
+        if (!r.ok) throw new Error(`REST /save → HTTP ${r.status}`);
+    } finally { clearTimeout(timer); }
+}
+
+// Kopieren, bis der Stand stabil ist (Level.sav-Prüfsummen unverändert und
+// kein halbfertiger Atomic-Save *.new_tmp) — der Server speichert alle 60 s.
+const PAL_EXPORT_SCRIPT = [
+    'SRC=/palworld/Pal/Saved/SaveGames/0; TMP=/tmp/snap;',
+    'for i in 1 2 3; do',
+    '  rm -rf $TMP; mkdir -p $TMP;',
+    '  S1=$(md5sum $SRC/*/Level.sav 2>/dev/null | md5sum);',
+    '  cp -a $SRC/. $TMP/;',
+    '  S2=$(md5sum $SRC/*/Level.sav 2>/dev/null | md5sum);',
+    '  if [ "$S1" = "$S2" ] && ! ls $SRC/*/*.new_tmp >/dev/null 2>&1; then break; fi;',
+    '  sleep 3;',
+    'done;',
+    'tar czf - -C $TMP .'
+].join(' ');
+
+app.get('/api/palworld/export', async (req, res) => {
+    if (palUpdateJob.running) return res.status(409).json({ error: 'Update läuft gerade' });
+    try {
+        let saveTriggered = true;
+        try {
+            await palTriggerSave();
+        } catch (e) {
+            saveTriggered = false;
+            console.log(`Palworld-Export: REST-Save nicht möglich (${e.message}), exportiere letzten Autosave`);
+        }
+
+        await palEnsureUpdateImage();
+        const { Writable } = require('stream');
+        const chunks = [];
+        const stdout = new Writable({ write(c, enc, cb) { chunks.push(c); cb(); } });
+        const stderr = new Writable({ write(c, enc, cb) { cb(); } });
+        const [result] = await docker.run(PAL_UPDATE_IMAGE, ['-c', PAL_EXPORT_SCRIPT], [stdout, stderr], {
+            Entrypoint: ['sh'],
+            Tty: false,
+            HostConfig: {
+                Binds: [`${PAL_GAME_HOST_PATH}:/palworld:ro`],
+                AutoRemove: true
+            }
+        });
+
+        const archive = Buffer.concat(chunks);
+        // tar.gz beginnt mit dem gzip-Magic 1f 8b — alles andere ist ein Fehlerfall
+        if (result?.StatusCode !== 0 || archive.length < 2 || archive[0] !== 0x1f || archive[1] !== 0x8b) {
+            throw new Error(`Snapshot fehlgeschlagen (Exit ${result?.StatusCode ?? '?'}, ${archive.length} Bytes)`);
+        }
+
+        const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+        res.set({
+            'Content-Type': 'application/gzip',
+            'Content-Disposition': `attachment; filename="palchaos-save-${stamp}.tar.gz"`,
+            'X-Save-Triggered': saveTriggered ? 'yes' : 'no'
+        });
+        res.send(archive);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/palworld/logs', async (req, res) => {
     try {
         const logs = await docker.getContainer(PAL_CONTAINER).logs({

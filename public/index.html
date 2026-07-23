@@ -261,6 +261,13 @@
       automatisch neu. Spieler werden dabei getrennt.
     </p>
 
+    <div class="section-label">Savegame</div>
+    <button class="start" id="pal-btn-export" style="width:100%" onclick="palExportSave()">💾 Savegame speichern &amp; exportieren</button>
+    <p style="font-size:11px; color:#888; margin-top:6px; line-height:1.5;">
+      Löst einen Save auf dem Server aus und lädt die Welt als tar.gz herunter.
+      Läuft im Hintergrund, Spieler werden nicht gestört.
+    </p>
+
     <div class="logs-section">
       <button class="logs-toggle" onclick="palToggleUpdateLog()">
         <span id="pal-update-log-toggle-text">▸ Update-Log anzeigen</span>
@@ -583,6 +590,37 @@
         toast(data.success ? `Palworld ${data.action}` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
       } catch { toast('Netzwerk-Fehler', 'error'); }
       setTimeout(updatePalStatus, 2000);
+    }
+
+    async function palExportSave() {
+      const btn = document.getElementById('pal-btn-export');
+      btn.disabled = true;
+      const oldText = btn.textContent;
+      btn.textContent = '💾 Speichere & exportiere ...';
+      try {
+        const res = await fetch('/api/palworld/export');
+        if (!res.ok) {
+          let msg = 'HTTP ' + res.status;
+          try { msg = (await res.json()).error || msg; } catch {}
+          toast('Export fehlgeschlagen: ' + msg, 'error');
+          return;
+        }
+        const saveTriggered = res.headers.get('X-Save-Triggered') === 'yes';
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="?([^";]+)/);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = m ? m[1] : 'palchaos-save.tar.gz';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+        toast(saveTriggered
+          ? 'Savegame gespeichert & exportiert'
+          : 'Export ok (Save-Trigger nicht erreichbar, Stand ist der letzte Autosave)', 'success');
+      } catch { toast('Netzwerk-Fehler beim Export', 'error'); }
+      finally { btn.disabled = false; btn.textContent = oldText; }
     }
 
     async function palStartUpdate() {
