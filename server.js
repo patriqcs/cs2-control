@@ -516,10 +516,29 @@ app.get('/api/palworld/logs', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`CS2 Control Panel läuft auf Port ${PORT}`);
     console.log(`Container: ${CONTAINER_NAME}`);
     console.log(`RCON: ${RCON_HOST}:${RCON_PORT}`);
     console.log(`CS2 Data Path: ${CS2_DATA_PATH}`);
     console.log(`Palworld-Container: ${PAL_CONTAINER}`);
 });
+
+// Graceful Shutdown: Node läuft im Container als PID 1 und hat dort keinen
+// Default-Handler für SIGTERM. Ohne diesen Block wartet `docker stop` das
+// volle Timeout ab (auf Unraid 120 s) und killt dann hart (Exit 137).
+let shuttingDown = false;
+function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} empfangen, beende Server…`);
+    const hardExit = setTimeout(() => {
+        console.error('Shutdown-Timeout, beende hart');
+        process.exit(1);
+    }, 5000);
+    hardExit.unref();
+    server.close(() => process.exit(0));
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
