@@ -1,7 +1,7 @@
 const express = require('express');
 const Docker = require('dockerode');
 const basicAuth = require('express-basic-auth');
-const { Rcon } = require('rcon-client');
+const { sendRcon: rconSend } = require('./lib/rcon');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
@@ -25,11 +25,8 @@ app.use(basicAuth({
 app.use(express.static('public'));
 app.use(express.json());
 
-async function sendRcon(command) {
-    const rcon = await Rcon.connect({
-        host: RCON_HOST, port: RCON_PORT, password: RCON_PASSWORD, timeout: 5000
-    });
-    try { return await rcon.send(command); } finally { await rcon.end(); }
+function sendRcon(command) {
+    return rconSend(command, { host: RCON_HOST, port: RCON_PORT, password: RCON_PASSWORD, timeout: 5000 });
 }
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));

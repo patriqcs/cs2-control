@@ -257,6 +257,18 @@ docker inspect cs2-modded-server --format '{{range .Config.Env}}{{println .}}{{e
 
 kus' Casual-Mode hat ein Auto-Refill. Lösung: `bot_join_after_player 0` aus `disable_bots.cfg`. Wichtig: `exec_after_map_start` muss vor dem `changelevel` gesetzt werden, weil Map-Load die ConVars resettet.
 
+### Server stürzt mit "Couldn't find a valid ICU package" ab
+
+Seit dem kus-Image vom 2026-09-25 (Basis Steam Runtime 4 / Debian 13 statt sniper) fehlt `libicu`
+im Container. CounterStrikeSharp (.NET 10) bricht damit beim Laden mit `System.Environment.FailFast`
+ab, der `cs2`-Prozess endet mit "Aborted", der Container bleibt ohne Server laufen. Ein Force Update
+hilft nicht (Spieldaten sind intakt). Workaround, bis kus `libicu` ins Image nimmt: eine Kopie von
+`addons/counterstrikesharp/api/CounterStrikeSharp.API.runtimeconfig.json` mit
+`"System.Globalization.Invariant": true` unter `configProperties` in den `custom_files`-Ordner legen
+(`customoverwrites/addons/counterstrikesharp/api/...`). Sie wird bei jedem Containerstart über die
+Image-Version kopiert. Eine Umgebungsvariable (`DOTNET_SYSTEM_GLOBALIZATION_INVARIANT`) greift nicht,
+weil kus den Server per `sudo -u steam` ohne `-E` startet (`env_reset`).
+
 ### Force Update bleibt hängen
 
 40GB löschen + Re-Download dauert 30-40 Min:
