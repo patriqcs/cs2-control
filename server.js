@@ -2,6 +2,7 @@ const express = require('express');
 const Docker = require('dockerode');
 const basicAuth = require('express-basic-auth');
 const { sendRcon: rconSend } = require('./lib/rcon');
+const prophunt = require('./lib/prophunt');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
@@ -125,27 +126,62 @@ function afterMapStart(commands) {
     return { cmd: `exec_after_map_start "${all.join('; ')}"`, delay: 200 };
 }
 
-function buildPropHuntSequence(workshopId) {
+// Die PropHunt-Einstellungen aus dem Panel gehen als eigene cfg in den Map-Start-Hook:
+// alle Befehle direkt im exec_after_map_start-String wuerden die Konsolen-Zeilenlaenge sprengen.
+const PROPHUNT_CFG_NAME = 'panel_prophunt.cfg';
+const PROPHUNT_CFG_PATH = path.join(CS2_DATA_PATH, 'game', 'csgo', 'cfg', PROPHUNT_CFG_NAME);
+
+function buildPropHuntSequence(workshopId, withPanelConfig) {
+    const afterStart = [...PROPHUNT_CONVARS, 'sv_alltalk 1', 'sv_full_alltalk 1'];
+    if (withPanelConfig) afterStart.push(`exec ${PROPHUNT_CFG_NAME}`);
     return [
         { cmd: 'exec settings/disable_random_round.cfg',                 delay: 800 },
         { cmd: 'exec settings/disable_dice.cfg',                         delay: 1000 },
         { cmd: 'exec casual.cfg',                                        delay: 1500 },
-        afterMapStart([...PROPHUNT_CONVARS, 'sv_alltalk 1', 'sv_full_alltalk 1']),
+        afterMapStart(afterStart),
         { cmd: `host_workshop_map ${workshopId}`,                        delay: 0 }
     ];
 }
 
 app.post('/api/map', async (req, res) => {
-    const { workshopId } = req.body;
+    const { workshopId, config } = req.body;
     if (!ALLOWED_MAPS[workshopId]) return res.status(400).json({ error: 'Map nicht erlaubt' });
+    let commands = [];
+    if (config !== undefined) {
+        const { values, errors } = prophunt.validateConfig(config);
+        if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
+        commands = prophunt.buildConfigCommands(values);
+    }
+    if (commands.length > 0) {
+        try { await fs.writeFile(PROPHUNT_CFG_PATH, commands.join('\n') + '\n'); }
+        catch (err) { return res.status(500).json({ error: `${PROPHUNT_CFG_NAME}: ${err.message}` }); }
+    }
     try {
-        const sequence = buildPropHuntSequence(workshopId);
+        const sequence = buildPropHuntSequence(workshopId, commands.length > 0);
         const results = await sendRconSequence(sequence);
         const failed = results.filter(r => !r.ok);
         if (failed.length > 0) {
             res.status(500).json({ error: `${failed.length} Command(s) fehlgeschlagen`, results });
         } else {
             res.json({ success: true, action: ALLOWED_MAPS[workshopId], count: results.length });
+        }
+    } catch (err) { res.status(500).json({ error: `RCON: ${err.message}` }); }
+});
+
+app.get('/api/prophunt-config', (req, res) => res.json({ options: prophunt.OPTIONS }));
+
+app.post('/api/prophunt-config', async (req, res) => {
+    const { values, errors } = prophunt.validateConfig(req.body && req.body.config);
+    if (errors.length > 0) return res.status(400).json({ error: errors.join(', ') });
+    const commands = prophunt.buildConfigCommands(values);
+    if (commands.length === 0) return res.status(400).json({ error: 'Keine Einstellungen übergeben' });
+    try {
+        const results = await sendRconSequence(commands.map(cmd => ({ cmd, delay: 150 })));
+        const failed = results.filter(r => !r.ok);
+        if (failed.length > 0) {
+            res.status(500).json({ error: `${failed.length} Command(s) fehlgeschlagen`, results });
+        } else {
+            res.json({ success: true, count: results.length });
         }
     } catch (err) { res.status(500).json({ error: `RCON: ${err.message}` }); }
 });

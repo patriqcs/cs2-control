@@ -54,6 +54,15 @@
     button.restart { color: #fbbf24; border-color: #3a2f14; }
     button.stop { color: #f87171; border-color: #3a1414; }
     button.map { color: #7B9FD6; }
+    .ph-config { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; font-size: 12px; color: #bbb; }
+    .ph-config input[type=number] {
+      width: 72px; padding: 6px 8px; font-size: 12px; text-align: right;
+      background: #0f0f0f; border: 1px solid #333; border-radius: 6px; color: #e5e5e5; font-family: inherit;
+    }
+    .ph-config input[type=number]:focus { outline: none; border-color: #555; }
+    .ph-config input[type=checkbox] { width: 16px; height: 16px; accent-color: #7B9FD6; justify-self: end; }
+    .ph-actions { display: grid; grid-template-columns: 2fr 1fr; gap: 6px; margin-top: 8px; }
+    .ph-hint { font-size: 10px; color: #666; margin-top: 6px; line-height: 1.5; }
     button.cursed-on { color: #c084fc; border-color: #4c1d95; }
     button.cursed-off { color: #a78bfa; border-color: #2e1065; }
 
@@ -192,6 +201,14 @@
       <button class="map" onclick="loadMap('3711322683', 'Nuke')">☢ Nuke</button>
       <button class="map" onclick="loadMap('3615968422', 'Mirage')">🏜 Mirage</button>
     </div>
+
+    <div class="section-label">Prop Hunt Einstellungen</div>
+    <div class="ph-config" id="ph-config"></div>
+    <div class="ph-actions">
+      <button class="map ph-btn" onclick="applyPropHuntConfig()">Anwenden</button>
+      <button onclick="resetPropHuntConfig()">Standard</button>
+    </div>
+    <div class="ph-hint">Wird beim Laden einer Prop-Hunt-Map automatisch gesetzt. „Anwenden“ schickt die Werte sofort an die laufende Map; Rundenzeit und Versteckzeit gelten ab der nächsten Runde.</div>
 
     <div class="section-label">Cursed Config</div>
     <div class="actions two">
@@ -346,6 +363,7 @@
         document.getElementById('btn-restart').disabled = !data.running;
         document.getElementById('btn-stop').disabled = !data.running;
         document.querySelectorAll('.maps button').forEach(b => b.disabled = !data.running);
+        document.querySelectorAll('button.ph-btn').forEach(b => b.disabled = !data.running);
         document.querySelectorAll('button.macro').forEach(b => b.disabled = !data.running);
         document.getElementById('rcon-input').disabled = !data.running;
       } catch (err) {
@@ -369,12 +387,81 @@
       try {
         const res = await fetch('/api/map', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workshopId })
+          body: JSON.stringify({ workshopId, config: readPropHuntConfig() })
         });
         const data = await res.json();
         toast(data.success ? `→ ${name} (${data.count} Cmds)` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
       } catch { toast('Netzwerk-Fehler', 'error'); }
       setTimeout(updateStatus, 4000);
+    }
+
+    // Die Map verraet ihre aktuellen Werte nicht — das Panel merkt sich die zuletzt
+    // gewaehlten im Browser und schickt sie bei "Anwenden" bzw. beim Map-Laden mit.
+    const PH_STORAGE_KEY = 'prophuntConfig';
+    let phOptions = [];
+
+    function storedPropHuntConfig() {
+      try { return JSON.parse(localStorage.getItem(PH_STORAGE_KEY)) || {}; } catch { return {}; }
+    }
+
+    function renderPropHuntConfig(values) {
+      const box = document.getElementById('ph-config');
+      box.textContent = '';
+      for (const o of phOptions) {
+        const value = o.name in values ? values[o.name] : o.default;
+        const label = document.createElement('label');
+        label.htmlFor = `ph-${o.name}`;
+        label.textContent = o.label;
+        const input = document.createElement('input');
+        input.id = `ph-${o.name}`;
+        if (o.type === 'bool') {
+          input.type = 'checkbox';
+          input.checked = value === true;
+        } else {
+          input.type = 'number';
+          input.min = o.min; input.max = o.max; input.step = o.step;
+          input.value = value;
+        }
+        input.addEventListener('change', () => {
+          try { localStorage.setItem(PH_STORAGE_KEY, JSON.stringify(readPropHuntConfig())); } catch {}
+        });
+        box.append(label, input);
+      }
+    }
+
+    function readPropHuntConfig() {
+      const config = {};
+      for (const o of phOptions) {
+        const input = document.getElementById(`ph-${o.name}`);
+        config[o.name] = o.type === 'bool' ? input.checked : Number(input.value);
+      }
+      return config;
+    }
+
+    async function initPropHuntConfig() {
+      try {
+        const res = await fetch('/api/prophunt-config');
+        phOptions = (await res.json()).options;
+        renderPropHuntConfig(storedPropHuntConfig());
+      } catch { toast('Prop-Hunt-Einstellungen nicht ladbar', 'error'); }
+    }
+
+    function resetPropHuntConfig() {
+      try { localStorage.removeItem(PH_STORAGE_KEY); } catch {}
+      renderPropHuntConfig({});
+    }
+
+    async function applyPropHuntConfig() {
+      document.querySelectorAll('button.ph-btn').forEach(b => b.disabled = true);
+      try {
+        const res = await fetch('/api/prophunt-config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: readPropHuntConfig() })
+        });
+        const data = await res.json();
+        toast(data.success ? `✓ Prop-Hunt-Einstellungen gesetzt (${data.count} Cmds)` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
+      } catch { toast('Netzwerk-Fehler', 'error'); }
+      setTimeout(updateStatus, 1500);
     }
 
     async function macro(id, label) {
@@ -711,6 +798,7 @@
     }
 
     updateStatus();
+    initPropHuntConfig();
     updatePalStatus();
     setInterval(updateStatus, 5000);
     setInterval(updatePalStatus, 5000);

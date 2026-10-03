@@ -191,6 +191,16 @@ Beim Klick auf eine PropHunt-Map werden folgende Commands gesendet:
 
 CS2 führt beim Map-Load die gamemode-cfg (`gamemode_casual.cfg`) neu aus und resettet dabei ConVars (u.a. `mp_startmoney`, `mp_maxrounds`, `mp_warmuptime`, `sv_alltalk`). Deshalb stecken **alle** PropHunt-Convars, das Bot-Kicken und AllTalk im `exec_after_map_start`-String (gebaut von `afterMapStart()` in `server.js`) und werden NACH dem Map-Load gesetzt.
 
+## PropHunt Einstellungen
+
+Der Block „Prop Hunt Einstellungen“ steuert die Game-Settings der PropHunt-Maps (TAGrenade, RandomSeekers, ForceReroll, ForceTaunt, SeekerRespawnTime, PropMaxRerolls, PropMaxClones, MissDamage) und die Rundenzeit.
+
+- Die Map nimmt ihre Optionen auf einem Dedicated Server als `say !config <Name> <Wert>` aus der Serverkonsole an; das Panel schickt genau das per RCON. Die Rundenzeit setzt `mp_roundtime`, `mp_roundtime_defuse` und `mp_roundtime_hostage` (Minuten).
+- **Anwenden** schickt die Werte sofort an die laufende Map. Rundenzeit und SeekerRespawnTime gelten ab der nächsten Runde.
+- Beim Laden einer PropHunt-Map schreibt das Panel die Werte nach `game/csgo/cfg/panel_prophunt.cfg` (über `CS2_DATA_PATH`) und hängt `exec panel_prophunt.cfg` an den `exec_after_map_start`-String, weil die Map ihre Optionen bei jedem Laden zurücksetzt.
+- Die Map lässt sich nicht nach ihren aktuellen Werten fragen. Das Panel merkt sich die zuletzt gewählten Werte im Browser (`localStorage`), also pro Gerät.
+- Namen, Defaults und Wertebereiche stehen in `lib/prophunt.js` und stammen aus dem Map-Skript; der Server lässt nur diese Namen und Bereiche zu.
+
 ## Cursed Config Macros
 
 **AN**: Casual → Random Rounds an → Dice an → AllTalk sofort aus (Fallback) → after-map-start queue → changelevel de_dust2
