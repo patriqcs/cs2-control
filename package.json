@@ -8,8 +8,8 @@
     "test": "node --test"
   },
   "dependencies": {
-    "dockerode": "^4.0.2",
-    "express": "^4.19.2",
+    "dockerode": "^5.0.1",
+    "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
     "rcon-client": "^4.2.5"
   },
