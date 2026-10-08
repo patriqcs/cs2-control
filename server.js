@@ -97,7 +97,8 @@ const ALLOWED_MAPS = {
     '3608612434': 'Inferno PropHunt',
     '3644811896': 'Office PropHunt',
     '3711322683': 'Nuke PropHunt',
-    '3615968422': 'Mirage PropHunt'
+    '3615968422': 'Mirage PropHunt',
+    '3758986810': 'Dust2 PropHunt'
 };
 
 const PROPHUNT_CONVARS = [

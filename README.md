@@ -176,6 +176,7 @@ Standardmäßig konfiguriert:
 | 3644811896 | Office PropHunt |
 | 3711322683 | Nuke PropHunt |
 | 3615968422 | Mirage PropHunt |
+| 3758986810 | Dust2 PropHunt |
 
 Eigene Maps in `ALLOWED_MAPS` in `server.js` eintragen, dann Buttons in `public/index.html` anpassen.
 
