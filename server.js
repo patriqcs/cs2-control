@@ -3,6 +3,7 @@ const Docker = require('dockerode');
 const basicAuth = require('express-basic-auth');
 const { sendRcon: rconSend } = require('./lib/rcon');
 const prophunt = require('./lib/prophunt');
+const { ensureLatestImage } = require('./lib/image-update');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
@@ -16,6 +17,8 @@ const RCON_PORT = parseInt(process.env.RCON_PORT || '27015');
 const RCON_PASSWORD = process.env.RCON_PASSWORD || '';
 const PORT = process.env.PORT || 3000;
 const CS2_DATA_PATH = process.env.CS2_DATA_PATH || '/cs2-data';
+// Vor Start/Restart das Server-Image neu ziehen und den Container bei neuem Image neu aufbauen.
+const CS2_AUTO_IMAGE_UPDATE = (process.env.CS2_AUTO_IMAGE_UPDATE || 'true').toLowerCase() !== 'false';
 
 app.use('/icons', express.static(path.join(__dirname, 'public', 'icons')));
 app.use(basicAuth({
@@ -80,17 +83,44 @@ app.get('/api/status', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Start und Restart prüfen vorher auf ein neues Image (siehe lib/image-update.js).
+// Ein laufender Server wird durch "Start" nicht angefasst, nur durch "Restart".
+let cs2LifecycleBusy = false;
+async function startWithImageCheck({ restart }) {
+    if (cs2LifecycleBusy) { const e = new Error('Start/Update läuft bereits'); e.status = 409; throw e; }
+    cs2LifecycleBusy = true;
+    try {
+        let check = { updated: false };
+        const before = await docker.getContainer(CONTAINER_NAME).inspect();
+        const running = !!(before.State && before.State.Running);
+        if (CS2_AUTO_IMAGE_UPDATE && (restart || !running)) {
+            check = await ensureLatestImage(docker, CONTAINER_NAME, { log: msg => console.log(`[image-update] ${msg}`) });
+        }
+        // Nach einem Neuaufbau gibt es einen neuen Container unter demselben Namen.
+        const container = docker.getContainer(CONTAINER_NAME);
+        if (check.updated || !running) await container.start();
+        else if (restart) await container.restart({ t: 30 });
+        else await container.start(); // läuft bereits: Docker meldet das als Fehler, wie bisher
+        return check;
+    } finally { cs2LifecycleBusy = false; }
+}
+function lifecycleResponse(verb, check) {
+    const body = { success: true, action: check.updated ? `${verb} (Image aktualisiert)` : verb, imageUpdated: !!check.updated };
+    if (check.warning) body.warning = check.warning;
+    return body;
+}
+
 app.post('/api/start', async (req, res) => {
-    try { await docker.getContainer(CONTAINER_NAME).start(); res.json({ success: true, action: 'gestartet' }); }
-    catch (err) { res.status(500).json({ error: err.message }); }
+    try { res.json(lifecycleResponse('gestartet', await startWithImageCheck({ restart: false }))); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 app.post('/api/stop', async (req, res) => {
     try { await docker.getContainer(CONTAINER_NAME).stop({ t: 30 }); res.json({ success: true, action: 'gestoppt' }); }
     catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/api/restart', async (req, res) => {
-    try { await docker.getContainer(CONTAINER_NAME).restart({ t: 30 }); res.json({ success: true, action: 'neugestartet' }); }
-    catch (err) { res.status(500).json({ error: err.message }); }
+    try { res.json(lifecycleResponse('neugestartet', await startWithImageCheck({ restart: true }))); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
 });
 
 const ALLOWED_MAPS = {
@@ -555,6 +585,7 @@ const server = app.listen(PORT, () => {
     console.log(`Container: ${CONTAINER_NAME}`);
     console.log(`RCON: ${RCON_HOST}:${RCON_PORT}`);
     console.log(`CS2 Data Path: ${CS2_DATA_PATH}`);
+    console.log(`Image-Update vor Start: ${CS2_AUTO_IMAGE_UPDATE ? 'an' : 'aus'}`);
     console.log(`Palworld-Container: ${PAL_CONTAINER}`);
 });
 

@@ -5,6 +5,7 @@ Ein leichtgewichtiges Web-Panel zum Verwalten eines [kus/cs2-modded-server](http
 ## Features
 
 - **Server-Control**: Start/Stop/Restart des CS2 Containers via Docker-Socket
+- **Image-Update vor dem Start**: Start (bei gestopptem Server) und Restart ziehen zuerst das Image des CS2-Containers neu. Gibt es ein neues, wird der Container mit denselben Einstellungen (Mounts, Ports, Variablen, Labels) neu angelegt und dann gestartet. Hintergrund: nach CS2-Updates passt der Mod-Stack des alten Images nicht mehr zum Spiel, der Server stürzt dann bei jedem Start ab. Schlägt der Image-Check fehl (kein Netz), wird trotzdem gestartet. Abschaltbar mit `CS2_AUTO_IMAGE_UPDATE=false`.
 - **PropHunt-Maps**: One-Click Map-Wechsel mit korrektem Setup (Buying aus, Freezetime kurz, Bots weg, alltalk an)
 - **Cursed Config**: Macro für Random Rounds + RTD an/aus mit automatischem Reset
 - **RCON Terminal**: Beliebige RCON-Befehle absetzen, Command-History per Pfeiltasten
@@ -43,6 +44,7 @@ Werte die du setzen musst:
 | `AUTH_USER` | Login-Username fürs Panel | `admin` |
 | `AUTH_PASS` | Login-Passwort (stark wählen!) | `openssl rand -base64 24` |
 | `CS2_CONTAINER` | Name deines CS2-Containers | `cs2-modded-server` |
+| `CS2_AUTO_IMAGE_UPDATE` | Vor Start/Restart das Server-Image aktualisieren (optional, Standard an) | `true` |
 | `RCON_HOST` | IP/Hostname des CS2-Servers | `192.168.178.60` |
 | `RCON_PORT` | RCON-Port | `27015` |
 | `RCON_PASSWORD` | RCON-Passwort des CS2-Servers | aus CS2 Container Env |

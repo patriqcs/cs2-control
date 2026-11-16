@@ -375,9 +375,10 @@
     async function action(type) {
       document.querySelectorAll('button').forEach(b => b.disabled = true);
       try {
+        if (type !== 'stop') toast('Prüfe auf neues Server-Image …', 'success');
         const res = await fetch(`/api/${type}`, { method: 'POST' });
         const data = await res.json();
-        toast(data.success ? `Server ${data.action}` : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
+        toast(data.success ? `Server ${data.action}` + (data.warning ? ` · ${data.warning}` : '') : 'Fehler: ' + (data.error || '?'), data.success ? 'success' : 'error');
       } catch { toast('Netzwerk-Fehler', 'error'); }
       setTimeout(updateStatus, 2000);
     }
